@@ -14,7 +14,7 @@ export default function Lobby({ socket, onJoined }) {
   const handleCreate = () => {
     if (!playerName.trim()) return setError('Enter your name')
     socket.emit('room:create', { ...settings, playerName }, (res) => {
-      if (res.ok) onJoined(res.code, res.state)
+      if (res.ok) onJoined(res.code, res.state, playerName)
       else setError(res.error)
     })
   }
@@ -23,7 +23,7 @@ export default function Lobby({ socket, onJoined }) {
     if (!playerName.trim()) return setError('Enter your name')
     if (!code.trim()) return setError('Enter room code')
     socket.emit('room:join', { code: code.toUpperCase(), playerName }, (res) => {
-      if (res.ok) onJoined(code.toUpperCase(), res.state)
+      if (res.ok) onJoined(code.toUpperCase(), res.state, playerName)
       else setError(res.error)
     })
   }

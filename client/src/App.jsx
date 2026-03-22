@@ -10,12 +10,29 @@ export default function App() {
   const [gameState, setGameState] = useState(null)
 
   useEffect(() => {
-    socket.on('game:state', setGameState)
-    socket.on('room:updated', (state) => setGameState(state))
-    return () => { socket.off('game:state'); socket.off('room:updated') }
+    socket.on('connect', () => {
+      // Attempt to rejoin if we had a room
+      const savedCode = sessionStorage.getItem('roomCode')
+      const savedName = sessionStorage.getItem('playerName')
+      if (savedCode && savedName) {
+        socket.emit('room:join', { code: savedCode, playerName: savedName }, (res) => {
+          if (res.ok) {
+            setRoomCode(savedCode)
+            setGameState(res.state)
+          }
+        })
+      }
+    })
+    socket.on('game:state', (state) => {
+      setGameState(state)
+    })
+    socket.on('room:updated', setGameState)
+    return () => socket.off()
   }, [])
 
-  const handleJoined = (code, state) => {
+  const handleJoined = (code, state, playerName) => {
+    sessionStorage.setItem('roomCode', code)
+    sessionStorage.setItem('playerName', playerName)
     setRoomCode(code)
     setGameState(state)
   }
