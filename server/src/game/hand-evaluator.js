@@ -28,7 +28,12 @@ export function evaluateHand(cards) {
   else if (groups[0][1] === 2) rank = 'one_pair'
   else rank = 'high_card'
 
-  return { rank, score: HAND_RANKS[rank], tiebreakers: groups.map(g => g[0]) }
+  // For a wheel (A-2-3-4-5), Ace plays as 1 — tiebreaker high card is 5, not 14
+  const tiebreakers = isWheel
+    ? [5, 4, 3, 2, 1]
+    : groups.map(g => g[0])
+
+  return { rank, score: HAND_RANKS[rank], tiebreakers }
 }
 
 function combinations(arr, k) {
@@ -38,6 +43,7 @@ function combinations(arr, k) {
 
 export function getBestHand(holeCards, communityCards) {
   const all = [...holeCards, ...communityCards]
+  if (all.length < 5) throw new Error(`getBestHand requires at least 5 cards, got ${all.length}`)
   return combinations(all, 5)
     .map(evaluateHand)
     .reduce((best, hand) => compareHands(hand, best) > 0 ? hand : best)

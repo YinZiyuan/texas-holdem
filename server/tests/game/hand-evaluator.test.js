@@ -63,6 +63,10 @@ describe('getBestHand', () => {
     const result = getBestHand(holeCards, community)
     expect(result.rank).toBe('royal_flush')
   })
+
+  it('throws if fewer than 5 cards provided', () => {
+    expect(() => getBestHand([c('A','spades'), c('K','spades')], [c('Q','spades')])).toThrow()
+  })
 })
 
 describe('compareHands', () => {
@@ -76,5 +80,17 @@ describe('compareHands', () => {
     const h1 = evaluateHand([c('A','spades'), c('K','spades'), c('Q','spades'), c('J','spades'), c('10','spades')])
     const h2 = evaluateHand([c('A','hearts'), c('K','hearts'), c('Q','hearts'), c('J','hearts'), c('10','hearts')])
     expect(compareHands(h1, h2)).toBe(0)
+  })
+
+  it('tiebreaker: ace-high flush beats king-high flush', () => {
+    const aceHigh = evaluateHand([c('A','clubs'), c('10','clubs'), c('8','clubs'), c('6','clubs'), c('4','clubs')])
+    const kingHigh = evaluateHand([c('K','clubs'), c('10','clubs'), c('8','clubs'), c('6','clubs'), c('4','clubs')])
+    expect(compareHands(aceHigh, kingHigh)).toBeGreaterThan(0)
+  })
+
+  it('wheel straight (A-2-3-4-5) loses to 6-high straight (2-3-4-5-6)', () => {
+    const wheel = evaluateHand([c('A','hearts'), c('2','spades'), c('3','diamonds'), c('4','clubs'), c('5','hearts')])
+    const sixHigh = evaluateHand([c('6','hearts'), c('2','spades'), c('3','diamonds'), c('4','clubs'), c('5','hearts')])
+    expect(compareHands(wheel, sixHigh)).toBeLessThan(0)
   })
 })
