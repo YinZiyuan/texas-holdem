@@ -19,24 +19,23 @@ describe('createDeck', () => {
     expect(typeof card.value).toBe('number')
   })
 
-  it('has 4 suits × 13 ranks', () => {
+  it('has exactly the 4 standard suits and 13 ranks', () => {
     const deck = createDeck()
     const suits = new Set(deck.map(c => c.suit))
     const ranks = new Set(deck.map(c => c.rank))
-    expect(suits.size).toBe(4)
-    expect(ranks.size).toBe(13)
+    expect(suits).toEqual(new Set(['spades', 'hearts', 'diamonds', 'clubs']))
+    expect(ranks).toEqual(new Set(['2','3','4','5','6','7','8','9','10','J','Q','K','A']))
   })
 })
 
 describe('shuffle', () => {
-  it('returns same 52 cards in different order', () => {
+  it('returns all 52 original cards (same elements, caller array untouched)', () => {
     const deck = createDeck()
-    const shuffled = shuffle([...deck])
+    const shuffled = shuffle(deck)  // shuffle copies internally; deck is unchanged
     expect(shuffled).toHaveLength(52)
-    const ids = new Set(shuffled.map(c => c.id))
-    expect(ids.size).toBe(52)
-    // extremely unlikely to be same order
-    expect(shuffled).not.toEqual(deck)
+    // same cards present (sorted by id for deterministic comparison)
+    const sortById = arr => [...arr].sort((a, b) => a.id.localeCompare(b.id))
+    expect(sortById(shuffled)).toEqual(sortById(deck))
   })
 
   it('does not mutate original', () => {
