@@ -15,6 +15,8 @@ describe('createDeck', () => {
     expect(card).toHaveProperty('suit')
     expect(card).toHaveProperty('rank')
     expect(card).toHaveProperty('id')
+    expect(card).toHaveProperty('value')
+    expect(typeof card.value).toBe('number')
   })
 
   it('has 4 suits × 13 ranks', () => {
@@ -40,7 +42,7 @@ describe('shuffle', () => {
   it('does not mutate original', () => {
     const deck = createDeck()
     const original = [...deck]
-    shuffle([...deck])
+    shuffle(deck)
     expect(deck).toEqual(original)
   })
 })
