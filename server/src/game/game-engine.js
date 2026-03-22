@@ -83,7 +83,7 @@ export class GameEngine {
       s.pot += toCall
       if (player.chips === 0) player.allIn = true
     } else if (action === 'check') {
-      // valid only when player.bet === currentBet — no chips change
+      if (player.bet !== s.currentBet) return // invalid: can't check with a bet deficit
     } else if (action === 'raise') {
       const toCall = s.currentBet - player.bet
       const raiseAmount = Math.min(toCall + amount, player.chips)
@@ -94,6 +94,8 @@ export class GameEngine {
       if (player.chips === 0) player.allIn = true
       // On raise, reset acted set — everyone needs to act again
       s.actedThisStreet = new Set()
+    } else {
+      return // unknown action — ignore
     }
 
     s.actedThisStreet.add(playerId)
