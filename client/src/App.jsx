@@ -11,7 +11,6 @@ export default function App() {
 
   useEffect(() => {
     socket.on('connect', () => {
-      // Attempt to rejoin if we had a room
       const savedCode = sessionStorage.getItem('roomCode')
       const savedName = sessionStorage.getItem('playerName')
       if (savedCode && savedName) {
@@ -19,13 +18,14 @@ export default function App() {
           if (res.ok) {
             setRoomCode(savedCode)
             setGameState(res.state)
+          } else {
+            sessionStorage.removeItem('roomCode')
+            sessionStorage.removeItem('playerName')
           }
         })
       }
     })
-    socket.on('game:state', (state) => {
-      setGameState(state)
-    })
+    socket.on('game:state', setGameState)
     socket.on('room:updated', setGameState)
     return () => socket.off()
   }, [])
@@ -37,11 +37,18 @@ export default function App() {
     setGameState(state)
   }
 
+  const handleLeave = () => {
+    sessionStorage.removeItem('roomCode')
+    sessionStorage.removeItem('playerName')
+    setRoomCode(null)
+    setGameState(null)
+  }
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0a1628', fontFamily: 'sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#000' }}>
       {!roomCode
         ? <Lobby socket={socket} onJoined={handleJoined} />
-        : <GameTable socket={socket} roomCode={roomCode} gameState={gameState} />
+        : <GameTable socket={socket} roomCode={roomCode} gameState={gameState} onLeave={handleLeave} />
       }
     </div>
   )

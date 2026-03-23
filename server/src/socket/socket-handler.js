@@ -19,7 +19,24 @@ export function registerSocketHandlers(io, roomManager) {
       try {
         const room = roomManager.getRoom(code)
         if (!room) return cb({ ok: false, error: 'Room not found' })
-        roomManager.joinRoom(code, { id: socket.id, name: playerName })
+        // Check if reconnecting (same name already in room)
+        const existing = room.players.find(p => p.name === playerName)
+        if (existing) {
+          const oldId = existing.id
+          // Update socket ID for reconnect
+          existing.socketId = socket.id
+          existing.id = socket.id
+          // Also update game engine's player list if game started
+          if (room.game && room.game.state) {
+            const gamePlayer = room.game.state.players.find(p => p.id === oldId)
+            if (gamePlayer) {
+              gamePlayer.id = socket.id
+              gamePlayer.socketId = socket.id
+            }
+          }
+        } else {
+          roomManager.joinRoom(code, { id: socket.id, name: playerName })
+        }
         socket.join(code)
         io.to(code).emit('room:updated', room.getPublicState(null))
         cb({ ok: true, state: room.getPublicState(socket.id) })
@@ -39,7 +56,8 @@ export function registerSocketHandlers(io, roomManager) {
         })
         cb({ ok: true })
       } catch (e) {
-        cb({ ok: false, error: e.message })
+        console.error('game:start error:', e.message)
+        if (cb) cb({ ok: false, error: e.message })
       }
     })
 
@@ -54,6 +72,7 @@ export function registerSocketHandlers(io, roomManager) {
         })
         if (cb) cb({ ok: true })
       } catch (e) {
+        console.error('game:action error:', e.message)
         if (cb) cb({ ok: false, error: e.message })
       }
     })
