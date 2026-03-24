@@ -1,20 +1,31 @@
 import { createDeck, shuffle } from './deck.js'
 import { getBestHand, compareHands } from './hand-evaluator.js'
+import { PotManager } from './pot-manager.js'
+import { Timer } from './timer.js'
 
 export class GameEngine {
   constructor(players, options = {}) {
-    this.options = { smallBlind: 10, bigBlind: 20, ...options }
+    this.options = {
+      smallBlind: 10,
+      bigBlind: 20,
+      turnTime: 20000, // 每手思考时间（毫秒）
+      ...options
+    }
     this.state = {
       phase: 'waiting',
       players: players.map(p => ({ ...p, holeCards: [], bet: 0, folded: false, allIn: false })),
       communityCards: [],
-      pot: 0,
+      potManager: new PotManager(),
       currentBet: 0,
+      lastRaiseAmount: 0,
       dealerIndex: 0,
       currentPlayerIndex: 0,
       deck: [],
-      // Track which players have acted this street (needed for BB option)
-      actedThisStreet: new Set()
+      actedThisStreet: new Set(),
+      streetBets: {},
+      timer: new Timer(this.options.turnTime),
+      remainingTime: 0,
+      currentPlayerId: null
     }
   }
 
@@ -22,11 +33,12 @@ export class GameEngine {
     const s = this.state
     s.deck = shuffle(createDeck())
     s.communityCards = []
-    s.pot = 0
+    s.potManager.reset()
     s.currentBet = 0
     s.phase = 'preflop'
     s.winner = undefined
     s.actedThisStreet = new Set()
+    s.streetBets = {}
     s.players.forEach(p => { p.holeCards = []; p.bet = 0; p.folded = false; p.allIn = false })
 
     // Deal 2 hole cards each
@@ -46,9 +58,8 @@ export class GameEngine {
     this._postBlind(sbIdx, this.options.smallBlind)
     this._postBlind(bbIdx, this.options.bigBlind)
     s.currentBet = this.options.bigBlind
+    s.lastRaiseAmount = this.options.bigBlind // BB is the initial "raise" from SB
 
-    // BB has "acted" by posting — mark them so UTG must act before BB gets option
-    // Actually: BB gets to act last preflop (BB option), so we do NOT mark BB as acted
     // UTG (first to act preflop)
     if (n === 2) {
       // Heads-up: dealer/SB acts first preflop
@@ -56,6 +67,9 @@ export class GameEngine {
     } else {
       s.currentPlayerIndex = (bbIdx + 1) % n
     }
+
+    // 启动第一个玩家的倒计时
+    this._startTimerForCurrentPlayer()
   }
 
   _postBlind(idx, amount) {
@@ -64,7 +78,7 @@ export class GameEngine {
     const posted = Math.min(amount, p.chips)
     p.chips -= posted
     p.bet += posted
-    s.pot += posted
+    s.streetBets[p.id] = (s.streetBets[p.id] || 0) + posted
     if (p.chips === 0) p.allIn = true
   }
 
@@ -80,17 +94,25 @@ export class GameEngine {
       const toCall = Math.min(s.currentBet - player.bet, player.chips)
       player.chips -= toCall
       player.bet += toCall
-      s.pot += toCall
+      s.streetBets[playerId] = (s.streetBets[playerId] || 0) + toCall
       if (player.chips === 0) player.allIn = true
     } else if (action === 'check') {
       if (player.bet !== s.currentBet) return // invalid: can't check with a bet deficit
     } else if (action === 'raise') {
       const toCall = s.currentBet - player.bet
-      const raiseAmount = Math.min(toCall + amount, player.chips)
-      player.chips -= raiseAmount
-      player.bet += raiseAmount
-      s.pot += raiseAmount
+      // Minimum raise = last raise amount (standard no-limit rule)
+      const minRaiseTotal = s.currentBet + s.lastRaiseAmount
+      const newBet = Math.min(toCall + amount, player.chips)
+      // Validate: new bet must be at least minRaiseTotal (unless all-in)
+      if (newBet < minRaiseTotal && newBet < toCall + player.chips) {
+        return // Invalid raise - not enough
+      }
+      const actualRaiseAmount = newBet - s.currentBet
+      player.chips -= newBet
+      player.bet += newBet
+      s.streetBets[playerId] = (s.streetBets[playerId] || 0) + newBet
       s.currentBet = player.bet
+      s.lastRaiseAmount = actualRaiseAmount > 0 ? actualRaiseAmount : s.lastRaiseAmount
       if (player.chips === 0) player.allIn = true
       // On raise, reset acted set — everyone needs to act again
       s.actedThisStreet = new Set()
@@ -100,10 +122,15 @@ export class GameEngine {
 
     s.actedThisStreet.add(playerId)
 
+    // 停止当前计时器
+    s.timer.stop()
+
     if (this._isRoundOver()) {
       this._advancePhase()
     } else {
       this._nextPlayer()
+      // 为新玩家启动计时器
+      this._startTimerForCurrentPlayer()
     }
   }
 
@@ -132,19 +159,69 @@ export class GameEngine {
     s.currentPlayerIndex = idx
   }
 
+  _startTimerForCurrentPlayer() {
+    const s = this.state
+    const player = s.players[s.currentPlayerIndex]
+    if (!player || player.folded || player.allIn) return
+
+    s.currentPlayerId = player.id
+
+    s.timer.start(
+      this.options.turnTime,
+      () => {
+        // 超时回调 - 自动 Fold
+        this._onTimeout(player.id)
+      },
+      (remaining) => {
+        // 每秒回调 - 更新剩余时间
+        s.remainingTime = remaining
+      }
+    )
+
+    // 立即更新一次
+    s.remainingTime = this.options.turnTime
+  }
+
+  _onTimeout(playerId) {
+    const s = this.state
+    const player = s.players.find(p => p.id === playerId)
+    if (!player || player.folded || player.allIn) return
+
+    console.log(`Player ${player.name} timed out, auto-folding`)
+
+    // 执行 Fold
+    player.folded = true
+    s.actedThisStreet.add(playerId)
+
+    if (this._isRoundOver()) {
+      this._advancePhase()
+    } else {
+      this._nextPlayer()
+      this._startTimerForCurrentPlayer()
+    }
+  }
+
   _advancePhase() {
     const s = this.state
     const active = this._activePlayers()
 
+    // Create side pots at the end of each street
+    const allInPlayers = new Set(s.players.filter(p => p.allIn && !p.folded).map(p => p.id))
+    const foldedPlayers = new Set(s.players.filter(p => p.folded).map(p => p.id))
+    s.potManager.createSidePots(s.streetBets, allInPlayers, foldedPlayers, new Set())
+
     // Reset bets and acted set for next street
     s.players.forEach(p => { p.bet = 0 })
     s.currentBet = 0
+    s.lastRaiseAmount = this.options.bigBlind
     s.actedThisStreet = new Set()
+    s.streetBets = {}
 
-    // Only one player left — they win
+    // Only one player left — they win all pots
     if (active.length === 1) {
-      active[0].chips += s.pot
-      s.pot = 0
+      const totalPot = s.potManager.getTotalPot()
+      active[0].chips += totalPot
+      s.potManager.reset()
       s.phase = 'ended'
       s.winner = active[0].id
       return
@@ -173,21 +250,54 @@ export class GameEngine {
     let idx = (s.dealerIndex + 1) % n
     while (s.players[idx].folded || s.players[idx].allIn) idx = (idx + 1) % n
     s.currentPlayerIndex = idx
+
+    // 启动新阶段的倒计时
+    this._startTimerForCurrentPlayer()
   }
 
   _resolveShowdown() {
     const s = this.state
     const active = this._activePlayers()
-    const evaluated = active.map(p => ({
+
+    // Create final side pots if any pending bets
+    const allInPlayers = new Set(s.players.filter(p => p.allIn && !p.folded).map(p => p.id))
+    const foldedPlayers = new Set(s.players.filter(p => p.folded).map(p => p.id))
+    s.potManager.createSidePots(s.streetBets, allInPlayers, foldedPlayers, new Set())
+
+    // Evaluate all active players' hands
+    const playerResults = active.map(p => ({
+      playerId: p.id,
       player: p,
       hand: getBestHand(p.holeCards, s.communityCards)
     }))
-    evaluated.sort((a, b) => compareHands(b.hand, a.hand))
-    // Simple winner-takes-all (no split pot in v1)
-    evaluated[0].player.chips += s.pot
-    s.pot = 0
+
+    // Distribute all pots
+    const distributions = s.potManager.distributePots(playerResults, compareHands)
+
+    // Apply winnings
+    const winnerInfo = {}
+    distributions.forEach(({ playerId, amount, potAmount, isSplit }) => {
+      const p = s.players.find(pl => pl.id === playerId)
+      if (p) {
+        p.chips += amount
+        if (!winnerInfo[playerId]) {
+          winnerInfo[playerId] = { name: p.name, amount: 0, isSplit: false }
+        }
+        winnerInfo[playerId].amount += amount
+        winnerInfo[playerId].isSplit = winnerInfo[playerId].isSplit || isSplit
+      }
+    })
+
+    s.potManager.reset()
     s.phase = 'ended'
-    s.winner = evaluated[0].player.id
+
+    // Set primary winner (for simple display)
+    const winners = Object.entries(winnerInfo)
+    if (winners.length === 1) {
+      s.winner = winners[0][0]
+    } else {
+      s.winner = Object.keys(winnerInfo) // Multiple winners
+    }
   }
 
   nextHand() {
@@ -198,12 +308,17 @@ export class GameEngine {
 
   getPublicState(forPlayerId) {
     const s = this.state
+    const pots = s.potManager.getPots()
     return {
       phase: s.phase,
       communityCards: s.communityCards,
-      pot: s.pot,
+      pot: s.potManager.getTotalPot(),
+      pots: pots, // Array of { amount, eligiblePlayers }
       currentBet: s.currentBet,
+      lastRaiseAmount: s.lastRaiseAmount,
       currentPlayerId: s.players[s.currentPlayerIndex]?.id,
+      remainingTime: s.remainingTime, // 剩余时间（毫秒）
+      totalTime: this.options.turnTime, // 总时长
       winner: s.winner,
       bigBlind: this.options.bigBlind,
       players: s.players.map(p => ({
@@ -213,7 +328,7 @@ export class GameEngine {
         bet: p.bet,
         folded: p.folded,
         allIn: p.allIn,
-        // Only reveal hole cards to owner; at showdown reveal all active players' cards
+        eligiblePot: pots.filter(pt => pt.eligiblePlayers.includes(p.id)).reduce((sum, pt) => sum + pt.amount, 0),
         holeCards: p.id === forPlayerId
           ? p.holeCards
           : (s.phase === 'showdown' || s.phase === 'ended') && !p.folded

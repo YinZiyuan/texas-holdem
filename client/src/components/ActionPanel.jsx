@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import TimerDisplay from './TimerDisplay'
 
 export default function ActionPanel({ socket, roomCode, gameState, myId }) {
   const [raiseAmount, setRaiseAmount] = useState(0)
@@ -25,8 +26,10 @@ export default function ActionPanel({ socket, roomCode, gameState, myId }) {
     )
   }
 
+  const isMyTurn = game.currentPlayerId === myId
+
   // Not my turn
-  if (game.currentPlayerId !== myId) {
+  if (!isMyTurn) {
     return (
       <div style={styles.container}>
         <div style={styles.waiting}>等待其他玩家...</div>
@@ -38,7 +41,8 @@ export default function ActionPanel({ socket, roomCode, gameState, myId }) {
   const canCheck = myPlayer?.bet === game.currentBet
   const callAmount = game.currentBet - (myPlayer?.bet || 0)
   const myChips = myPlayer?.chips || 0
-  const minRaise = game.bigBlind || 20
+  const lastRaiseAmount = game.lastRaiseAmount || game.bigBlind || 20
+  const minRaiseTotal = game.currentBet + lastRaiseAmount
   const pot = game.pot || 0
 
   const act = (action, amount) => {
@@ -47,11 +51,18 @@ export default function ActionPanel({ socket, roomCode, gameState, myId }) {
 
   const handleRaiseChange = (val) => {
     const num = parseInt(val) || 0
-    setRaiseAmount(Math.max(minRaise, Math.min(num, myChips)))
+    setRaiseAmount(Math.max(minRaiseTotal, Math.min(num, myChips)))
   }
 
   return (
     <div style={styles.container}>
+      {/* 倒计时显示 */}
+      <TimerDisplay
+        remainingTime={game.remainingTime}
+        totalTime={game.totalTime}
+        isMyTurn={isMyTurn}
+      />
+
       <div style={styles.mainActions}>
         <button style={{...styles.btn, ...styles.foldBtn}} onClick={() => act('fold')}>
           弃牌
@@ -70,14 +81,14 @@ export default function ActionPanel({ socket, roomCode, gameState, myId }) {
 
       <div style={styles.raiseSection}>
         <div style={styles.quickBtns}>
-          <button style={styles.quickBtn} onClick={() => setRaiseAmount(Math.min(minRaise * 2, myChips))}>
-            2xBB
+          <button style={styles.quickBtn} onClick={() => setRaiseAmount(Math.min(minRaiseTotal + lastRaiseAmount, myChips))}>
+            {lastRaiseAmount >= myChips ? '全押' : `+${lastRaiseAmount}`}
+          </button>
+          <button style={styles.quickBtn} onClick={() => setRaiseAmount(Math.min(game.currentBet + lastRaiseAmount * 2, myChips))}>
+            2x注
           </button>
           <button style={styles.quickBtn} onClick={() => setRaiseAmount(Math.min(pot, myChips))}>
             底池
-          </button>
-          <button style={styles.quickBtn} onClick={() => setRaiseAmount(Math.min(pot * 2, myChips))}>
-            2x底池
           </button>
           <button style={{...styles.quickBtn, ...styles.allInBtn}} onClick={() => setRaiseAmount(myChips)}>
             全押
@@ -88,15 +99,15 @@ export default function ActionPanel({ socket, roomCode, gameState, myId }) {
           <input
             type="number"
             style={styles.raiseInput}
-            value={raiseAmount || minRaise}
-            min={minRaise}
+            value={raiseAmount || minRaiseTotal}
+            min={minRaiseTotal}
             max={myChips}
             onChange={e => handleRaiseChange(e.target.value)}
           />
           <button
             style={{...styles.btn, ...styles.raiseBtn}}
-            onClick={() => act('raise', raiseAmount || minRaise)}
-            disabled={!raiseAmount || raiseAmount < minRaise}
+            onClick={() => act('raise', raiseAmount || minRaiseTotal)}
+            disabled={!raiseAmount || raiseAmount < minRaiseTotal}
           >
             加注
           </button>

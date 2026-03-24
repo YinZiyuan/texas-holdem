@@ -2,10 +2,20 @@ export function registerSocketHandlers(io, roomManager) {
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`)
 
+    socket.on('room:list', (cb) => {
+      try {
+        const list = roomManager.getRoomList()
+        cb({ ok: true, rooms: list })
+      } catch (e) {
+        cb({ ok: false, error: e.message })
+      }
+    })
+
     socket.on('room:create', (options, cb) => {
       try {
-        const room = roomManager.createRoom({ ...options, hostName: options.playerName })
-        // Re-add with real socket ID
+        const room = roomManager.createRoom({ ...options, hostId: socket.id, hostName: options.playerName })
+        // Set the host as the first player with real socket ID
+        room.hostId = socket.id
         room.players[0].socketId = socket.id
         room.players[0].id = socket.id
         socket.join(room.code)
@@ -26,6 +36,7 @@ export function registerSocketHandlers(io, roomManager) {
           // Update socket ID for reconnect
           existing.socketId = socket.id
           existing.id = socket.id
+          existing.status = 'online' // Reconnect as online
           // Also update game engine's player list if game started
           if (room.game && room.game.state) {
             const gamePlayer = room.game.state.players.find(p => p.id === oldId)
@@ -49,6 +60,10 @@ export function registerSocketHandlers(io, roomManager) {
       try {
         const room = roomManager.getRoom(code)
         if (!room) return cb({ ok: false, error: 'Room not found' })
+        // Only host can start the game
+        if (room.hostId !== socket.id) {
+          return cb({ ok: false, error: 'Only host can start the game' })
+        }
         room.startGame()
         // Send each player their private state
         room.players.forEach(p => {
@@ -77,6 +92,32 @@ export function registerSocketHandlers(io, roomManager) {
       }
     })
 
+    socket.on('room:disband', ({ code }, cb) => {
+      try {
+        const room = roomManager.getRoom(code)
+        if (!room) return cb({ ok: false, error: 'Room not found' })
+        // Only host can disband the room
+        if (room.hostId !== socket.id) {
+          return cb({ ok: false, error: 'Only host can disband the room' })
+        }
+        // Notify all players that room is disbanded
+        io.to(code).emit('room:disbanded', { reason: 'host_disbanded' })
+        // Remove all players from the room
+        room.players.forEach(p => {
+          const playerSocket = io.sockets.sockets.get(p.socketId)
+          if (playerSocket) {
+            playerSocket.leave(code)
+          }
+        })
+        // Delete the room
+        roomManager.rooms.delete(code)
+        cb({ ok: true })
+      } catch (e) {
+        console.error('room:disband error:', e.message)
+        if (cb) cb({ ok: false, error: e.message })
+      }
+    })
+
     socket.on('game:next-hand', ({ code }) => {
       const room = roomManager.getRoom(code)
       if (!room || !room.game) return
@@ -87,9 +128,22 @@ export function registerSocketHandlers(io, roomManager) {
     })
 
     socket.on('disconnect', () => {
-      // Remove from any room they were in
-      // (simple: iterate all rooms — ok for small scale)
+      // Check if this is a host - if so, disband the room
       for (const [code, room] of roomManager.rooms) {
+        if (room.hostId === socket.id) {
+          // Host disconnected - disband the room
+          io.to(code).emit('room:disbanded', { reason: 'host_left' })
+          // Clean up all players
+          room.players.forEach(p => {
+            const playerSocket = io.sockets.sockets.get(p.socketId)
+            if (playerSocket && p.socketId !== socket.id) {
+              playerSocket.leave(code)
+            }
+          })
+          roomManager.rooms.delete(code)
+          break
+        }
+        // Regular player disconnect
         const was = room.players.find(p => p.socketId === socket.id)
         if (was) {
           roomManager.removePlayer(code, socket.id)

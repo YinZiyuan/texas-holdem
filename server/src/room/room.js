@@ -1,12 +1,16 @@
 import { GameEngine } from '../game/game-engine.js'
+import { generateAvatar, createInitialStats } from '../game/avatar.js'
 
 export class Room {
   constructor(code, options) {
     this.code = code
+    this.name = options.name || `房间 ${code}`
+    this.hostId = options.hostId // Host socket ID
     this.options = options
     this.players = []
     this.game = null
     this.status = 'lobby' // lobby | playing | ended
+    this.createdAt = Date.now()
   }
 
   addPlayer(socketPlayer) {
@@ -15,7 +19,11 @@ export class Room {
       id: socketPlayer.id,
       name: socketPlayer.name,
       chips: this.options.startingChips,
-      socketId: socketPlayer.id
+      socketId: socketPlayer.id,
+      // 新增字段
+      avatar: generateAvatar(socketPlayer.name),
+      status: 'online',
+      stats: createInitialStats()
     }
     this.players.push(player)
     return player
@@ -23,6 +31,15 @@ export class Room {
 
   removePlayer(socketId) {
     this.players = this.players.filter(p => p.socketId !== socketId)
+  }
+
+  setPlayerStatus(socketId, status) {
+    const player = this.players.find(p => p.socketId === socketId)
+    if (player) {
+      player.status = status
+      return true
+    }
+    return false
   }
 
   startGame() {
@@ -38,9 +55,17 @@ export class Room {
   getPublicState(forSocketId) {
     return {
       code: this.code,
+      name: this.name,
       status: this.status,
       options: this.options,
-      players: this.players.map(p => ({ id: p.socketId, name: p.name, chips: p.chips })),
+      hostId: this.hostId,
+      players: this.players.map(p => ({
+        id: p.socketId,
+        name: p.name,
+        chips: p.chips,
+        avatar: p.avatar,
+        status: p.status
+      })),
       game: this.game ? this.game.getPublicState(forSocketId) : null
     }
   }

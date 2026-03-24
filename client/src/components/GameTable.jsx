@@ -11,7 +11,8 @@ export default function GameTable({ socket, roomCode, gameState, onLeave }) {
   )
 
   const myId = socket.id
-  const { game, players, status } = gameState
+  const { game, players, status, hostId } = gameState
+  const isHost = hostId === myId
 
   return (
     <div style={styles.container}>
@@ -31,17 +32,37 @@ export default function GameTable({ socket, roomCode, gameState, onLeave }) {
             {players?.map(p => (
               <div key={p.id} style={styles.lobbyPlayer}>
                 <div style={styles.lobbyAvatar}>{p.name.charAt(0)}</div>
-                <div style={styles.lobbyName}>{p.name}</div>
+                <div style={styles.lobbyName}>
+                  {p.name}
+                  {p.id === hostId && <span style={styles.hostBadge}>房主</span>}
+                </div>
               </div>
             ))}
           </div>
-          {players?.length >= 2 && (
-            <button
-              style={styles.startBtn}
-              onClick={() => socket.emit('game:start', { code: roomCode })}
-            >
-              开始游戏
-            </button>
+          {isHost && (
+            <div style={styles.hostControls}>
+              <button
+                style={styles.disbandBtn}
+                onClick={() => {
+                  if (confirm('确定要解散房间吗？所有玩家将被移出房间。')) {
+                    socket.emit('room:disband', { code: roomCode })
+                  }
+                }}
+              >
+                解散房间
+              </button>
+              {players?.length >= 2 && (
+                <button
+                  style={styles.startBtn}
+                  onClick={() => socket.emit('game:start', { code: roomCode })}
+                >
+                  开始游戏
+                </button>
+              )}
+            </div>
+          )}
+          {!isHost && (
+            <div style={styles.waitingText}>等待房主开始游戏...</div>
           )}
         </div>
       )}
@@ -63,7 +84,18 @@ export default function GameTable({ socket, roomCode, gameState, onLeave }) {
 
           {/* Table */}
           <div style={styles.table}>
-            <div style={styles.pot}>底池 {game.pot.toLocaleString()}</div>
+            <div style={styles.potSection}>
+              <div style={styles.totalPot}>底池 {game.pot.toLocaleString()}</div>
+              {game.pots && game.pots.length > 1 && (
+                <div style={styles.sidePots}>
+                  {game.pots.map((pot, idx) => (
+                    <div key={idx} style={styles.sidePot}>
+                      {idx === 0 ? '主池' : `边池${idx}`}: {pot.amount.toLocaleString()}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <CommunityCards cards={game.communityCards} />
             <div style={styles.currentBet}>当前注 {game.currentBet}</div>
           </div>
@@ -156,17 +188,68 @@ const styles = {
     width: 60,
     height: 60,
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     color: '#fff',
     fontSize: 24,
     fontWeight: 600,
+    position: 'relative',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: '50%',
+    border: '3px solid #1c1c1e',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+  },
+  pulse: {
+    animation: 'pulse 2s ease-in-out infinite',
+  },
+  lobbyChips: {
+    color: '#30d158',
+    fontSize: 13,
+    fontWeight: 600,
   },
   lobbyName: {
     color: '#fff',
     fontSize: 14,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hostBadge: {
+    background: '#ff9500',
+    color: '#000',
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 10,
+  },
+  hostControls: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    alignItems: 'center',
+  },
+  disbandBtn: {
+    padding: '12px 32px',
+    borderRadius: 12,
+    border: '1px solid rgba(255,69,58,0.5)',
+    background: 'rgba(255,69,58,0.15)',
+    color: '#ff453a',
+    fontSize: 16,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  waitingText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 16,
+    marginTop: 20,
   },
   startBtn: {
     padding: '18px 48px',
@@ -200,6 +283,28 @@ const styles = {
     fontSize: 18,
     fontWeight: 700,
     marginBottom: 12,
+  },
+  potSection: {
+    marginBottom: 12,
+  },
+  totalPot: {
+    color: '#ffd60a',
+    fontSize: 18,
+    fontWeight: 700,
+  },
+  sidePots: {
+    display: 'flex',
+    gap: 12,
+    justifyContent: 'center',
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
+  sidePot: {
+    color: 'rgba(255,214,10,0.7)',
+    fontSize: 12,
+    background: 'rgba(0,0,0,0.3)',
+    padding: '4px 10px',
+    borderRadius: 10,
   },
   currentBet: {
     color: 'rgba(255,255,255,0.6)',

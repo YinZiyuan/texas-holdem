@@ -8,7 +8,8 @@ export class RoomManager {
   createRoom(options) {
     const code = this._generateCode()
     const room = new Room(code, options)
-    room.addPlayer({ id: 'host', name: options.hostName })
+    // Host socket ID will be set in socket-handler after room creation
+    room.addPlayer({ id: options.hostId || 'host', name: options.hostName })
     this.rooms.set(code, room)
     return room
   }
@@ -26,6 +27,25 @@ export class RoomManager {
 
   getRoom(code) {
     return this.rooms.get(code) ?? null
+  }
+
+  getRoomList() {
+    const list = []
+    for (const [code, room] of this.rooms) {
+      // Only show lobby rooms that aren't full
+      if (room.status === 'lobby' && room.players.length < room.options.maxPlayers) {
+        list.push({
+          code: room.code,
+          name: room.name,
+          players: room.players.length,
+          maxPlayers: room.options.maxPlayers,
+          startingChips: room.options.startingChips,
+          bigBlind: room.options.bigBlind
+        })
+      }
+    }
+    // Sort by created time, newest first
+    return list.sort((a, b) => b.createdAt - a.createdAt)
   }
 
   _generateCode() {
