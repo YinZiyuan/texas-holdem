@@ -3,11 +3,13 @@ import { io } from 'socket.io-client'
 import Lobby from './components/Lobby'
 import GameTable from './components/GameTable'
 
-const socket = io('http://localhost:3001')
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001'
+const socket = io(SOCKET_URL)
 
 export default function App() {
   const [roomCode, setRoomCode] = useState(null)
   const [gameState, setGameState] = useState(null)
+  const [playerName, setPlayerName] = useState(null)
   const [disbandNotification, setDisbandNotification] = useState(null)
 
   useEffect(() => {
@@ -18,10 +20,12 @@ export default function App() {
         socket.emit('room:join', { code: savedCode, playerName: savedName }, (res) => {
           if (res.ok) {
             setRoomCode(savedCode)
+            setPlayerName(savedName)
             setGameState(res.state)
           } else {
             sessionStorage.removeItem('roomCode')
             sessionStorage.removeItem('playerName')
+            setPlayerName(null)
           }
         })
       }
@@ -37,15 +41,17 @@ export default function App() {
       sessionStorage.removeItem('roomCode')
       sessionStorage.removeItem('playerName')
       setRoomCode(null)
+      setPlayerName(null)
       setGameState(null)
     })
     return () => socket.off()
   }, [])
 
-  const handleJoined = (code, state, playerName) => {
+  const handleJoined = (code, state, name) => {
     sessionStorage.setItem('roomCode', code)
-    sessionStorage.setItem('playerName', playerName)
+    sessionStorage.setItem('playerName', name)
     setRoomCode(code)
+    setPlayerName(name)
     setGameState(state)
   }
 
@@ -53,6 +59,7 @@ export default function App() {
     sessionStorage.removeItem('roomCode')
     sessionStorage.removeItem('playerName')
     setRoomCode(null)
+    setPlayerName(null)
     setGameState(null)
   }
 
@@ -64,7 +71,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', background: '#000' }}>
       {!roomCode
         ? <Lobby socket={socket} onJoined={handleJoined} />
-        : <GameTable socket={socket} roomCode={roomCode} gameState={gameState} onLeave={handleLeave} />
+        : <GameTable socket={socket} roomCode={roomCode} gameState={gameState} playerName={playerName} onLeave={handleLeave} />
       }
       {disbandNotification && (
         <DisbandModal message={disbandNotification} onClose={handleCloseNotification} />

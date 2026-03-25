@@ -6,7 +6,32 @@ import { RoomManager } from './room/room-manager.js'
 import { registerSocketHandlers } from './socket/socket-handler.js'
 
 const app = express()
-app.use(cors())
+
+// CORS 配置 - 允许 Vercel 和本地开发
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://texas-holdem.vercel.app',
+  'https://*.vercel.app'
+]
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.some(o => {
+      if (o.includes('*')) {
+        const pattern = o.replace('*', '.*')
+        return new RegExp(pattern).test(origin)
+      }
+      return o === origin
+    })) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
+  credentials: true
+}))
+
 app.use(express.json())
 
 const httpServer = createServer(app)

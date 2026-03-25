@@ -2,7 +2,7 @@ import CommunityCards from './CommunityCards'
 import PlayerSeat from './PlayerSeat'
 import ActionPanel from './ActionPanel'
 
-export default function GameTable({ socket, roomCode, gameState, onLeave }) {
+export default function GameTable({ socket, roomCode, gameState, playerName, onLeave }) {
   if (!gameState) return (
     <div style={styles.loading}>
       <div style={styles.spinner}></div>
@@ -10,7 +10,7 @@ export default function GameTable({ socket, roomCode, gameState, onLeave }) {
     </div>
   )
 
-  const myId = socket.id
+  const myId = gameState.players?.find(p => p.name === playerName)?.id || gameState.game?.players?.find(p => p.name === playerName)?.id
   const { game, players, status, hostId } = gameState
   const isHost = hostId === myId
 
